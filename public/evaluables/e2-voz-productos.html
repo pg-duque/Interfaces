@@ -25,11 +25,101 @@
   <!-- Aqui acaba el HTML visible; ahora viene el codigo JavaScript (el "cerebro") -->
 <script src="/js/logica.js"></script><script src="/js/ayudas.js"></script>
   <script type="module">
-// Escribe aqui tu solucion siguiendo los pasos del enunciado.
-const $ = id => document.getElementById(id); // Busca un elemento por su id.
-// TODO 1: Preparar datos o componente.
-// TODO 2: Programar las acciones y eventos descritos arriba.
-// TODO 3: Mostrar resultados y errores; probar todos los casos.
+// Funcion auxiliar para localizar elementos de la pagina por su id.
+const $ = id => document.getElementById(id);
+const msg = $('msg');
+// Conservamos la respuesta original del servidor para poder repetir filtros sin perder productos.
+let productos = [];
+
+// Dibuja en la tabla la lista recibida. Se crea cada celda como texto para evitar interpretar HTML.
+function pintar(lista) {
+  const tabla = $('tabla');
+  tabla.replaceChildren(); // Quitamos la tabla anterior antes de dibujar el nuevo resultado.
+
+  // Creamos la cabecera con las tres columnas que pide el enunciado.
+  const cabecera = document.createElement('thead');
+  const filaCabecera = document.createElement('tr');
+  ['Nombre', 'Precio', 'Stock'].forEach(titulo => {
+    const th = document.createElement('th');
+    th.textContent = titulo;
+    filaCabecera.appendChild(th);
+  });
+  cabecera.appendChild(filaCabecera);
+  tabla.appendChild(cabecera);
+
+  const cuerpo = document.createElement('tbody');
+  if (lista.length === 0) {
+    // Mensaje sencillo cuando la lista esta vacia o el filtro no encuentra nada.
+    const fila = document.createElement('tr');
+    const celda = document.createElement('td');
+    celda.colSpan = 3;
+    celda.textContent = 'Sin coincidencias';
+    fila.appendChild(celda);
+    cuerpo.appendChild(fila);
+  } else {
+    // Una fila por producto, mostrando nombre, precio y unidades disponibles.
+    lista.forEach(producto => {
+      const fila = document.createElement('tr');
+      [producto.name, `${producto.price} €`, producto.stock].forEach(valor => {
+        const celda = document.createElement('td');
+        celda.textContent = String(valor ?? '');
+        fila.appendChild(celda);
+      });
+      cuerpo.appendChild(fila);
+    });
+  }
+  tabla.appendChild(cuerpo);
+}
+
+// Al cargar la pagina, descargamos una vez la lista original desde la API.
+async function cargarProductos() {
+  msg.textContent = 'Cargando productos…';
+  try {
+    productos = await window.Ayudas.pedir('/api/products');
+    pintar(productos);
+    msg.textContent = productos.length ? `Productos cargados: ${productos.length}.` : 'No hay productos.';
+  } catch (error) {
+    // Si la peticion falla, mostramos el error y dejamos una tabla vacia utilizable.
+    productos = [];
+    pintar(productos);
+    msg.textContent = `No se pudieron cargar los productos: ${error.message}.`;
+  }
+}
+
+// Cada pulsacion escucha un comando y aplica el filtro sobre la lista original.
+window.Ayudas.voz($('hablar'), (transcripcion) => {
+  const frase = transcripcion.toLowerCase().trim();
+  msg.textContent = `Has dicho: «${transcripcion}»`;
+
+  if (frase === 'stock bajo') {
+    // Mostramos solo productos con menos de cinco unidades, sin cambiar "productos".
+    const resultado = productos.filter(producto => producto.stock < 5);
+    pintar(resultado);
+    msg.textContent = resultado.length ? `Productos con stock bajo: ${resultado.length}.` : 'Sin coincidencias';
+  } else if (frase === 'todos') {
+    // Recuperamos la lista completa que guardamos al cargar la pagina.
+    pintar(productos);
+    msg.textContent = `Mostrando todos los productos: ${productos.length}.`;
+  } else if (frase.startsWith('buscar ')) {
+    // "buscar " son 7 caracteres. slice(7) extrae el termino, por ejemplo "teclado".
+    const busqueda = frase.slice(7).trim();
+    if (!busqueda) {
+      msg.textContent = 'Di «buscar» seguido del nombre de un producto.';
+      pintar([]);
+      return;
+    }
+    // La busqueda no distingue mayusculas y encuentra el termino en cualquier parte del nombre.
+    const resultado = productos.filter(producto => producto.name.toLowerCase().includes(busqueda));
+    pintar(resultado);
+    msg.textContent = resultado.length ? `Coincidencias: ${resultado.length}.` : 'Sin coincidencias';
+  } else {
+    // Se informa de los comandos admitidos si la frase no coincide con ninguno.
+    msg.textContent = 'Comando no reconocido. Di «stock bajo», «todos» o «buscar» y un nombre.';
+  }
+}, msg); // Los errores del microfono se muestran en el parrafo de avisos.
+
+// Iniciamos la carga al abrir la pagina.
+cargarProductos();
 
   </script>
 </body>

@@ -17,6 +17,12 @@
       "name": "Norte Foods",
       "email": "ventas@norte.es",
       "city": "Bilbao"
+    },
+    {
+      "name": "Diana",
+      "city": "Madrid",
+      "email": "diana@gmail.es",
+      "id": 4
     }
   ],
   "products": [

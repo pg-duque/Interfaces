@@ -25,11 +25,83 @@
   <!-- Aqui acaba el HTML visible; ahora viene el codigo JavaScript (el "cerebro") -->
 <script src="/js/logica.js"></script><script src="/js/ayudas.js"></script>
   <script type="module">
-// Escribe aqui tu solucion siguiendo los pasos del enunciado.
-const $ = id => document.getElementById(id); // Busca un elemento por su id.
-// TODO 1: Preparar datos o componente.
-// TODO 2: Programar las acciones y eventos descritos arriba.
-// TODO 3: Mostrar resultados y errores; probar todos los casos.
+
+// Todo muy comentado para entender bien qué hace cada componente en el  formulario
+// Funcion auxiliar para no repetir document.getElementById(...) cada vez.
+const $ = id => document.getElementById(id);
+// Parrafo para comunicar al usuario resultados, validaciones y errores.
+const msg = $('msg');
+
+// Guarda el cliente usando los datos que aparecen ahora mismo en los tres inputs.
+// Es async porque la peticion al servidor tarda y debemos esperar su respuesta.
+async function guardarCliente() {
+  // value contiene el texto escrito o dictado. trim() quita espacios externos.
+  const name = $('name').value.trim();
+  const city = $('city').value.trim();
+  const email = $('email').value.trim();
+
+  // El nombre y la ciudad son obligatorios. Si falta uno, mostramos el aviso y paramos.
+  if (!name || !city) {
+    msg.textContent = 'Escribe el nombre y la ciudad antes de guardar.';
+    return;
+  }
+  // Comprobacion sencilla del formato usuario@dominio.extension.
+  // Comprueba la forma, pero no puede saber si el correo existe realmente.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    msg.textContent = 'El correo no parece válido. Revísalo antes de guardar.';
+    return;
+  }
+
+  // Damos feedback mientras esperamos la respuesta del servidor.
+  msg.textContent = 'Guardando cliente…';
+  try {
+    // Ayudas.escribir hace un POST con cabecera JSON y serializa {name, city, email}.
+    // La API responde con el nuevo cliente, incluido el id asignado por el servidor.
+    const cliente = await window.Ayudas.escribir('/api/customers', 'POST', {name, city, email});
+    // Si no hubo error HTTP, anunciamos que el guardado termino correctamente.
+    msg.textContent = `Cliente ${cliente.name} guardado correctamente (ID ${cliente.id}).`;
+  } catch (error) {
+    // Capturamos fallos de red o respuestas HTTP no correctas.
+    // Conservamos los inputs para que los datos no se pierdan y se pueda reintentar.
+    msg.textContent = `No se pudo guardar el cliente: ${error.message}. Tus datos siguen en el formulario.`;
+  }
+}
+
+// El boton con raton llama al mismo metodo que utilizaremos con el comando de voz.
+$('guardar').addEventListener('click', guardarCliente);
+
+// Ayudas.voz configura el reconocimiento en espanol y escucha una frase por pulsacion.
+// Cuando entiende una frase, llama a esta funcion y entrega el texto en "transcripcion".
+window.Ayudas.voz($('hablar'), async (transcripcion) => {
+  // Normalizamos la frase: minusculas y sin espacios sobrantes al principio/final.
+  const frase = transcripcion.toLowerCase().trim();
+  // Enseñamos lo que entendio el microfono para poder revisarlo visualmente.
+  msg.textContent = `Has dicho: «${transcripcion}»`;
+
+  // startsWith detecta si el comando comienza con la etiqueta del campo.
+  if (frase.startsWith('nombre ')) {
+    // "nombre " son 7 caracteres: slice(7) extrae lo que va despues, por ejemplo Ana.
+    $('name').value = transcripcion.trim().slice(7).trim();
+  } else if (frase.startsWith('ciudad ')) {
+    // "ciudad " tambien son 7 caracteres; extraemos y guardamos el resto.
+    $('city').value = transcripcion.trim().slice(7).trim();
+  } else if (frase.startsWith('email ')) {
+    // "email " ocupa 6 caracteres. Convertimos el dictado en direccion de correo:
+    // "ana arroba mail punto es" se convierte en "ana@mail.es".
+    $('email').value = transcripcion.trim().slice(6)
+      .toLowerCase()
+      .replace(/arroba/g, '@')
+      .replace(/punto/g, '.')
+      // Quitamos espacios que el reconocimiento pueda haber añadido al dictar.
+      .replace(/\s+/g, '');
+  } else if (frase === 'guardar' || frase.startsWith('guardar ')) {
+    // El comando de voz reutiliza validacion y envio del boton de guardar.
+    await guardarCliente();
+  } else {
+    // Indicamos los comandos disponibles si la frase no coincide con ninguno.
+    msg.textContent = 'Frase no reconocida. Di «nombre …», «ciudad …», «email …» o «guardar».';
+  }
+}, msg); // Ayudas.voz escribe aqui los errores de permisos o reconocimiento.
 
   </script>
 </body>

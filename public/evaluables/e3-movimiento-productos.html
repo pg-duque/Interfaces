@@ -21,15 +21,126 @@
   <!-- Titulo grande de la pagina -->
   <div class="caja"><b>Criterios:</b> RA2 d. Completa los TODO siguiendo el enunciado completo.</div>
   <!-- Caja informativa con los criterios de evaluacion que trabaja el ejercicio -->
-<section class="caja enunciado"><h2>Que debes hacer, paso a paso</h2><p>Archivo: <code>public/evaluables/e3-movimiento-productos.html</code>. Solo modifica frontend. Lee el resuelto relacionado antes de empezar.</p><ol><li>Consulta R3. Aqui no se reconocen poses: se detectan diferencias de imagen. Los cambios de luz tambien pueden activar la accion.</li><li>Carga /api/products e importa /componentes/erp-tarjeta.js. En mostrar() asigna titulo=nombre y valor=stock del producto actual.</li><li>Compara los arrays RGBA de dos fotogramas con un for que avance de 4 en 4. Suma R+G+B para calcular el brillo.</li><li>Cuenta los cambios mayores de 90 en izquierda o derecha: columna=(i/4)%160, izquierda si columna&lt;80.</li><li>Si algun contador supera 600 y ha terminado el bloqueo, derecha avanza e izquierda retrocede. Usa modulo para volver al inicio o al final.</li><li>Actualiza la tarjeta y bloquea nuevos cambios durante 1000 ms. Guarda foto.slice() para comparar en la siguiente vuelta.</li><li>Prueba ambos lados con buena luz y fondo quieto. Ajusta 600 si la camara es demasiado sensible.</li></ol><h3>Entrega</h3><p>Entrega tu HTML, los componentes modificados y una captura de la prueba. Explica los errores que controlas y comenta cada paso. No incluyas soluciones del profesor ni node_modules.</p><h3>Comprobacion final</h3><p>La consola no debe mostrar errores inesperados. Prueba tambien una entrada vacia, un permiso denegado o una lista sin resultados. Los TODO son intencionados: el evaluable no esta terminado hasta que los completes.</p></section><div class="caja"><button id="hablar">Hablar (una frase)</button><button id="iniciar">Activar camara</button><p id="msg" role="status" aria-live="polite"></p><div class="zona"><canvas id="lienzo" width="160" height="120"></canvas></div><erp-tarjeta id="tarjeta"></erp-tarjeta></div>
+<section class="caja enunciado"><h2>Que debes hacer, paso a paso</h2><p>Archivo: <code>public/evaluables/e3-movimiento-productos.html</code>. Solo modifica frontend. Lee el resuelto relacionado antes de empezar.</p><ol><li>Consulta R3. Aqui no se reconocen poses: se detectan diferencias de imagen. Los cambios de luz tambien pueden activar la accion.</li><li>Carga /api/products e importa /componentes/erp-tarjeta.js. En mostrar() asigna titulo=nombre y valor=stock del producto actual.</li><li>Compara los arrays RGBA de dos fotogramas con un for que avance de 4 en 4. Suma R+G+B para calcular el brillo.</li><li>Cuenta los cambios mayores de 90 en izquierda o derecha: columna=(i/4)%160, izquierda si columna&lt;80.</li><li>Si algun contador supera 600 y ha terminado el bloqueo, derecha avanza e izquierda retrocede. Usa modulo para volver al inicio o al final.</li><li>Actualiza la tarjeta y bloquea nuevos cambios durante 1000 ms. Guarda foto.slice() para comparar en la siguiente vuelta.</li><li>Prueba ambos lados con buena luz y fondo quieto. Ajusta 600 si la camara es demasiado sensible.</li></ol><h3>Entrega</h3><p>Entrega tu HTML, los componentes modificados y una captura de la prueba. Explica los errores que controlas y comenta cada paso. No incluyas soluciones del profesor ni node_modules.</p><h3>Comprobacion final</h3><p>La consola no debe mostrar errores inesperados. Prueba tambien una entrada vacia, un permiso denegado o una lista sin resultados. Los TODO son intencionados: el evaluable no esta terminado hasta que los completes.</p></section><div class="caja"><button id="iniciar">Activar camara</button><p id="msg" role="status" aria-live="polite"></p><div class="zona"><canvas id="lienzo" width="160" height="120"></canvas></div><erp-tarjeta id="tarjeta"></erp-tarjeta></div>
   <!-- Aqui acaba el HTML visible; ahora viene el codigo JavaScript (el "cerebro") -->
 <script src="/js/logica.js"></script><script src="/js/ayudas.js"></script>
   <script type="module">
-// Escribe aqui tu solucion siguiendo los pasos del enunciado.
-const $ = id => document.getElementById(id); // Busca un elemento por su id.
-// TODO 1: Preparar datos o componente.
-// TODO 2: Programar las acciones y eventos descritos arriba.
-// TODO 3: Mostrar resultados y errores; probar todos los casos.
+// El import registra la etiqueta personalizada <erp-tarjeta>.
+import '/componentes/erp-tarjeta.js';
+
+const $ = id => document.getElementById(id);
+const msg = $('msg');
+const boton = $('iniciar');
+const lienzo = $('lienzo');
+const ctx = lienzo.getContext('2d', { willReadFrequently: true });
+const video = document.createElement('video'); // Recibe la camara; mostramos sus fotos en el canvas.
+video.playsInline = true; // Evita que el movil abra el video a pantalla completa.
+video.muted = true;
+
+let productos = []; // Lista original recibida de /api/products.
+let actual = 0;     // Indice del producto visible.
+let anterior = null; // Copia del fotograma anterior para comparar.
+let bloqueo = 0;    // Momento hasta el que ignoramos nuevos movimientos.
+let activo = false;
+
+// Actualiza la tarjeta con el nombre y el stock del producto actual.
+function mostrar() {
+  const tarjeta = $('tarjeta');
+  if (productos.length === 0) {
+    tarjeta.titulo = 'Sin productos';
+    tarjeta.valor = '0';
+    return;
+  }
+  tarjeta.titulo = productos[actual].name;
+  tarjeta.valor = productos[actual].stock;
+}
+
+// Pedimos los productos una vez. Si la lista esta vacia, no encendemos la camara.
+async function cargarProductos() {
+  boton.disabled = true;
+  msg.textContent = 'Cargando productos…';
+  try {
+    const datos = await window.Ayudas.pedir('/api/products');
+    if (!Array.isArray(datos)) throw new Error('La respuesta no es una lista de productos');
+    productos = datos;
+    mostrar();
+    msg.textContent = productos.length
+      ? 'Mueve la mano en la mitad derecha para avanzar o en la izquierda para retroceder.'
+      : 'No hay productos que mostrar.';
+    boton.disabled = productos.length === 0;
+  } catch (error) {
+    mostrar();
+    msg.textContent = `No se pudieron cargar los productos: ${error.message}.`;
+  }
+}
+
+// Compara el brillo de cada pixel con el fotograma anterior.
+function bucle() {
+  if (!activo) return;
+
+  // Dibujamos la imagen como un espejo para que los movimientos se vean naturales.
+  ctx.save();
+  ctx.translate(160, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, 160, 120);
+  ctx.restore();
+  const foto = ctx.getImageData(0, 0, 160, 120).data; // RGBA: 4 numeros por pixel.
+
+  if (anterior) {
+    let izq = 0;
+    let der = 0;
+    for (let i = 0; i < foto.length; i += 4) {
+      const brillo = foto[i] + foto[i + 1] + foto[i + 2];
+      const brilloAntes = anterior[i] + anterior[i + 1] + anterior[i + 2];
+      if (Math.abs(brillo - brilloAntes) > 90) {
+        const columna = (i / 4) % 160;
+        if (columna < 80) izq++; else der++;
+      }
+    }
+
+    // Elegimos el lado con mas cambios si supera 600 pixeles y ya paso el bloqueo.
+    if (performance.now() > bloqueo && (izq > 600 || der > 600)) {
+      if (der > izq) actual = (actual + 1) % productos.length;
+      else actual = (actual + productos.length - 1) % productos.length;
+      mostrar();
+      msg.textContent = `Producto ${actual + 1} de ${productos.length}: ${productos[actual].name}.`;
+      bloqueo = performance.now() + 1000; // Evita varios saltos por un solo gesto.
+    }
+  }
+
+  anterior = foto.slice(); // Sin copia, la siguiente comparacion perderia la imagen anterior.
+  requestAnimationFrame(bucle);
+}
+
+// El permiso se solicita al pulsar, como requieren los navegadores.
+boton.addEventListener('click', async () => {
+  boton.disabled = true; // Impide iniciar dos camaras o dos bucles a la vez.
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camara no disponible en este navegador');
+    const flujo = await navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 4 / 3 }, audio: false });
+    video.srcObject = flujo;
+    await video.play();
+    anterior = null;
+    activo = true;
+    msg.textContent = 'Camara activa. Mueve la mano a la izquierda o derecha de la imagen.';
+    bucle();
+  } catch (error) {
+    // Por ejemplo, permiso denegado o camara ocupada. Liberamos cualquier pista abierta.
+    video.srcObject?.getTracks().forEach(pista => pista.stop());
+    video.srcObject = null;
+    boton.disabled = false;
+    msg.textContent = `No se pudo activar la camara: ${error.message}.`;
+  }
+});
+
+// Liberamos la camara cuando se abandona la pagina.
+window.addEventListener('pagehide', () => {
+  activo = false;
+  video.srcObject?.getTracks().forEach(pista => pista.stop());
+  video.srcObject = null;
+});
+
+cargarProductos();
 
   </script>
 </body>
